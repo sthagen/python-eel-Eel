@@ -1,5 +1,27 @@
 # Change log
 
+### v0.14.0
+* Change JS function name parsing to use PyParsing rather than regex, courtesy @KyleKing.
+
+### v0.13.2
+* Add `default_path` start arg to define a default file to retrieve when hitting the root URL.
+
+### v0.13.1
+* Shut down the Eel server less aggressively when websockets get closed (#337)
+
+## v0.13.0
+* Drop support for Python versions below 3.6
+* Add `jinja2` as an extra for pip installation, e.g. `pip install eel[jinja2]`.
+* Bump dependencies in examples to dismiss github security notices. We probably want to set up a policy to ignore example dependencies as they shouldn't be considered a source of vulnerabilities.
+* Disable edge on non-Windows platforms until we implement proper support.
+
+### v0.12.4
+* Return greenlet task from `spawn()` ([#300](https://github.com/samuelhwilliams/Eel/pull/300))
+* Set JS mimetype to reduce errors on Windows platform ([#289](https://github.com/samuelhwilliams/Eel/pull/289))
+
+### v0.12.3
+* Search for Chromium on macOS.
+
 ### v0.12.2
 * Fix a bug that prevents using middleware via a custom Bottle.
 

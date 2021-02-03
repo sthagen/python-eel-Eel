@@ -1,5 +1,16 @@
 # Eel
 
+[![PyPI version](https://img.shields.io/pypi/v/Eel?style=for-the-badge)](https://pypi.org/project/Eel/)
+[![PyPi Downloads](https://img.shields.io/pypi/dm/Eel?style=for-the-badge)](https://pypistats.org/packages/eel)
+![Python](https://img.shields.io/pypi/pyversions/Eel?style=for-the-badge)
+[![License](https://img.shields.io/pypi/l/Eel.svg?style=for-the-badge)](https://pypi.org/project/Eel/)
+
+
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/samuelhwilliams/Eel.svg?logo=lgtm&style=for-the-badge)](https://lgtm.com/projects/g/samuelhwilliams/Eel/alerts/)
+[![Language grade: JavaScript](https://img.shields.io/lgtm/grade/javascript/g/samuelhwilliams/Eel.svg?logo=lgtm&style=for-the-badge)](https://lgtm.com/projects/g/samuelhwilliams/Eel/context:javascript)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/samuelhwilliams/Eel.svg?logo=lgtm&style=for-the-badge)](https://lgtm.com/projects/g/samuelhwilliams/Eel/context:python)
+
+
 Eel is a little Python library for making simple Electron-like offline HTML/JS GUI apps, with full access to Python capabilities and libraries.
 
 > **Eel hosts a local webserver, then lets you annotate functions in Python so that they can be called from Javascript, and vice versa.**
@@ -39,12 +50,20 @@ Eel is not as fully-fledged as Electron or cefpython - it is probably not suitab
 
 For some reason many of the best-in-class number crunching and maths libraries are in Python (Tensorflow, Numpy, Scipy etc) but many of the best visualization libraries are in Javascript (D3, THREE.js etc). Hopefully Eel makes it easy to combine these into simple utility apps for assisting your development.
 
+Join Eel's users and maintainers on [Discord](https://discord.com/invite/3nqXPFX), if you like.
+
 ## Install
 
 Install from pypi with `pip`:
 
 ```shell
 pip install eel
+```
+
+To include support for HTML templating, currently using [Jinja2](https://pypi.org/project/Jinja2/#description):
+
+```shell
+pip install eel[jinja2]
 ```
 
 ## Usage
@@ -143,6 +162,12 @@ can be called from the Python side like this...
 ```python
 print('Calling Javascript...')
 eel.my_javascript_function(1, 2, 3, 4)  # This calls the Javascript function
+```
+
+The exposed name can also be overridden by passing in a second argument. If your app minifies JavaScript during builds, this may be necessary to ensure that functions can be resolved on the Python side:
+
+```javascript
+eel.expose(someFunction, "my_javascript_function");
 ```
 
 When passing complex objects as arguments, bear in mind that internally they are converted to JSON and sent down a websocket (a process that potentially loses information).

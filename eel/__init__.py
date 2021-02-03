@@ -1,7 +1,8 @@
-from __future__ import print_function   # Python 2 compatibility stuff
 from builtins import range
+import traceback
 from io import open
 
+from gevent.threading import Timer
 import gevent as gvt
 import json as jsn
 import bottle as btl
@@ -9,11 +10,14 @@ import bottle.ext.websocket as wbs
 import re as rgx
 import os
 import eel.browsers as brw
+import pyparsing as pp
 import random as rnd
 import sys
 import pkg_resources as pkg
 import socket
+import mimetypes
 
+mimetypes.add_type('application/javascript', '.js')
 _eel_js_file = pkg.resource_filename('eel', 'eel.js')
 _eel_js = open(_eel_js_file, encoding='utf-8').read()
 _websockets = []
@@ -24,6 +28,7 @@ _exposed_functions = {}
 _js_functions = []
 _mock_queue = []
 _mock_queue_done = set()
+_shutdown = None
 
 # The maximum time (in milliseconds) that Python will try to retrieve a return value for functions executing in JS
 # Can be overridden through `eel.init` with the kwarg `js_result_timeout` (default: 10000)
@@ -44,6 +49,7 @@ _start_args = {
     'app_mode':  True,                              # (Chrome specific option)
     'all_interfaces': False,                        # Allow bottle server to listen for connections on all interfaces
     'disable_cache': True,                          # Sets the no-store response header when serving assets
+    'default_path': 'index.html',                   # The default file to retrieve for the root URL
     'app': btl.default_app(),                       # Allows passing in a custom Bottle instance, e.g. with middleware
 }
 
@@ -78,6 +84,22 @@ def expose(name_or_function=None):
         return function
 
 
+# PyParsing grammar for parsing exposed functions in JavaScript code
+# Examples: `eel.expose(w, "func_name")`, `eel.expose(func_name)`, `eel.expose((function (e){}), "func_name")`
+EXPOSED_JS_FUNCTIONS = pp.ZeroOrMore(
+    pp.Suppress(
+        pp.SkipTo(pp.Literal('eel.expose('))
+        + pp.Literal('eel.expose(')
+        + pp.Optional(
+            pp.Or([pp.nestedExpr(), pp.Word(pp.printables, excludeChars=',')]) + pp.Literal(',')
+        )
+    )
+    + pp.Suppress(pp.Regex(r'["\']?'))
+    + pp.Word(pp.printables, excludeChars='"\')')
+    + pp.Suppress(pp.Regex(r'["\']?\s*\)')),
+)
+
+
 def init(path, allowed_extensions=['.js', '.html', '.txt', '.htm',
                                    '.xhtml', '.vue'], js_result_timeout=10000):
     global root_path, _js_functions, _js_result_timeout
@@ -93,12 +115,8 @@ def init(path, allowed_extensions=['.js', '.html', '.txt', '.htm',
                 with open(os.path.join(root, name), encoding='utf-8') as file:
                     contents = file.read()
                     expose_calls = set()
-                    finder = rgx.findall(r'eel\.expose\(([^\)]+)\)', contents)
-                    for expose_call in finder:
-                        # If name specified in 2nd argument, strip quotes and store as function name
-                        if ',' in expose_call:
-                            expose_call = rgx.sub(r'["\']', '', expose_call.split(',')[1])
-                        expose_call = expose_call.strip()
+                    matches = EXPOSED_JS_FUNCTIONS.parseString(contents).asList()
+                    for expose_call in matches:
                         # Verify that function name is valid
                         msg = "eel.expose() call contains '(' or '='"
                         assert rgx.findall(r'[\(=]', expose_call) == [], msg
@@ -173,7 +191,7 @@ def sleep(seconds):
 
 
 def spawn(function, *args, **kwargs):
-    gvt.spawn(function, *args, **kwargs)
+    return gvt.spawn(function, *args, **kwargs)
 
 # Bottle Routes
 
@@ -189,6 +207,9 @@ def _eel():
     btl.response.content_type = 'application/javascript'
     _set_response_headers(btl.response)
     return page
+
+def _root():
+    return _static(_start_args['default_path'])
 
 def _static(path):
     response = None
@@ -233,6 +254,7 @@ def _websocket(ws):
 
 BOTTLE_ROUTES = {
     "/eel.js": (_eel, dict()),
+    "/": (_root, dict()),
     "/<path:path>": (_static, dict()),
     "/eel": (_websocket, dict(apply=[wbs.websocket]))
 }
@@ -254,16 +276,32 @@ def _repeated_send(ws, msg):
 
 def _process_message(message, ws):
     if 'call' in message:
-        return_val = _exposed_functions[message['name']](*message['args'])
+        error_info = {}
+        try:
+            return_val = _exposed_functions[message['name']](*message['args'])
+            status = 'ok'
+        except Exception as e:
+            err_traceback = traceback.format_exc()
+            traceback.print_exc()
+            return_val = None
+            status = 'error'
+            error_info['errorText'] = repr(e)
+            error_info['errorTraceback'] = err_traceback
         _repeated_send(ws, _safe_json({ 'return': message['call'],
-                                        'value': return_val  }))
+                                        'status': status,
+                                        'value': return_val,
+                                        'error': error_info,}))
     elif 'return' in message:
         call_id = message['return']
         if call_id in _call_return_callbacks:
-            callback = _call_return_callbacks.pop(call_id)
-            callback(message['value'])
+            callback, error_callback = _call_return_callbacks.pop(call_id)
+            if message['status'] == 'ok':
+                callback(message['value'])
+            elif message['status'] == 'error' and error_callback is not None:
+                error_callback(message['error'], message['stack'])
         else:
             _call_return_values[call_id] = message['value']
+
     else:
         print('Invalid message received: ', message)
 
@@ -308,9 +346,9 @@ def _call_return(call):
     global _js_result_timeout
     call_id = call['call']
 
-    def return_func(callback=None):
+    def return_func(callback=None, error_callback=None):
         if callback is not None:
-            _call_return_callbacks[call_id] = callback
+            _call_return_callbacks[call_id] = (callback, error_callback)
         else:
             for w in range(_js_result_timeout):
                 if call_id in _call_return_values:
@@ -325,17 +363,24 @@ def _expose(name, function):
     _exposed_functions[name] = function
 
 
+def _detect_shutdown():
+    if len(_websockets) == 0:
+        sys.exit()
+
+
 def _websocket_close(page):
+    global _shutdown
+
     close_callback = _start_args.get('close_callback')
 
     if close_callback is not None:
         sockets = [p for _, p in _websockets]
         close_callback(page, sockets)
     else:
-        # Default behaviour - wait 1s, then quit if all sockets are closed
-        sleep(1.0)
-        if len(_websockets) == 0:
-            sys.exit()
+        if _shutdown:
+            _shutdown.kill()
+
+        _shutdown = gvt.spawn_later(1.0, _detect_shutdown)
 
 
 def _set_response_headers(response):
