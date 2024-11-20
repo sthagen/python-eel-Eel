@@ -1,3 +1,4 @@
+from __future__ import annotations
 import subprocess as sps
 import webbrowser as wbr
 from typing import Union, List, Dict, Iterable, Optional
@@ -7,13 +8,15 @@ from eel.types import OptionsDictT
 import eel.chrome as chm
 import eel.electron as ele
 import eel.edge as edge
+import eel.msIE as ie
 #import eel.firefox as ffx      TODO
 #import eel.safari as saf       TODO
 
 _browser_paths: Dict[str, str] = {}
 _browser_modules: Dict[str, ModuleType] = {'chrome':   chm,
                                            'electron': ele,
-                                           'edge': edge}
+                                           'edge': edge,
+                                           'msie':ie}
 
 
 def _build_url_from_dict(page: Dict[str, str], options: OptionsDictT) -> str:
@@ -51,7 +54,7 @@ def open(start_pages: Iterable[Union[str, Dict[str, str]]], options: OptionsDict
     start_urls = _build_urls(start_pages, options)
     
     mode = options.get('mode')
-    if not isinstance(mode, (str, bool, type(None))) or mode is True:
+    if not isinstance(mode, (str, type(None))) and mode is not False:
         raise TypeError("'mode' option must by either a string, False, or None")
     if mode is None or mode is False:
         # Don't open a browser
