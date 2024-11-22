@@ -6,7 +6,7 @@ with open('README.md') as read_me:
 
 setup(
     name='Eel',
-    version='0.18.0',
+    version='0.18.1',
     author='Python Eel Organisation',
     author_email='python-eel@protonmail.com',
     url='https://github.com/python-eel/Eel',
@@ -14,7 +14,7 @@ setup(
     package_data={
         'eel': ['eel.js', 'py.typed'],
     },
-    install_requires=['bottle', 'bottle-websocket', 'future', 'pyparsing'],
+    install_requires=['bottle', 'bottle-websocket', 'future', 'pyparsing', 'typing_extensions'],
     extras_require={
         "jinja2": ['jinja2>=2.10']
     },
